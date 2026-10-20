@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StackBuilder — System Design Puzzle</title>
+<style>
+  :root{
+    --bg:#0e1230; --bg2:#161b48; --panel:#1b2150; --panel2:#232a66;
+    --ink:#eef1ff; --muted:#9aa3d8; --line:#3a4290;
+    --good:#43e59b; --bad:#ff5c72; --warn:#ffcf4d; --accent:#6c7bff;
+  }
+  *{box-sizing:border-box; -webkit-user-select:none; user-select:none;}
+  html,body{margin:0;height:100%;}
+  body{
+    font-family:'Trebuchet MS','Segoe UI',system-ui,sans-serif;
+    background:radial-gradient(1200px 700px at 70% -10%,#242c74 0,var(--bg) 60%);
+    color:var(--ink); overflow:hidden;
+  }
+  .hidden{display:none !important;}
+
+  /* ---------- SCREENS ---------- */
+  #screens{height:100vh;width:100vw;position:relative;}
+
+  /* Project select */
+  #projectScreen{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:30px;}
+  .logo{font-size:52px;font-weight:800;letter-spacing:1px;
+    background:linear-gradient(90deg,#6c7bff,#43e59b,#ffcf4d);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 4px 18px rgba(108,123,255,.4));text-align:center;}
+  .tagline{color:var(--muted);font-size:17px;margin-top:-14px;text-align:center;max-width:560px;}
+  .projects{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;max-width:980px;}
+  .project-card{
+    width:280px;background:linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--line);border-radius:18px;padding:22px;cursor:pointer;
+    transition:transform .15s ease, box-shadow .15s ease, border-color .15s;
+    box-shadow:0 12px 30px rgba(0,0,0,.35);
+  }
+  .project-card:hover{transform:translateY(-6px) scale(1.02);border-color:var(--accent);
+    box-shadow:0 20px 40px rgba(108,123,255,.35);}
+  .project-card .pc-emoji{font-size:40px;}
+  .project-card h3{margin:10px 0 6px;font-size:21px;}
+  .project-card p{margin:0;color:var(--muted);font-size:14px;line-height:1.45;}
+  .pc-diff{margin-top:14px;font-size:12px;color:var(--warn);letter-spacing:.5px;text-transform:uppercase;}
+
+  /* ---------- GAME ---------- */
+  #gameScreen{height:100%;display:flex;flex-direction:column;}
+  .topbar{display:flex;align-items:center;gap:16px;padding:12px 20px;
+    background:rgba(13,17,48,.7);border-bottom:1px solid var(--line);backdrop-filter:blur(6px);z-index:30;}
+  .topbar .proj{font-weight:700;font-size:17px;}
+  .topbar .goal{color:var(--muted);font-size:13px;}
+  .spacer{flex:1;}
+  .btn{border:none;border-radius:12px;padding:11px 20px;font-size:15px;font-weight:700;
+    cursor:pointer;font-family:inherit;transition:transform .1s, filter .15s;color:#09102e;}
+  .btn:active{transform:translateY(1px);}
+  .btn-start{background:linear-gradient(180deg,#58f0a8,#2fc985);box-shadow:0 6px 0 #1f9b65;}
+  .btn-start:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line);box-shadow:none;}
+  .btn-ghost:hover{color:var(--ink);border-color:var(--accent);}
+
+  .workspace{flex:1;display:flex;min-height:0;}
+
+  /* palette */
+  .palette{width:200px;background:linear-gradient(180deg,#141a46,#11163a);
+    border-right:1px solid var(--line);padding:14px;overflow-y:auto;}
+  .palette h4{margin:4px 0 12px;font-size:12px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;}
+  .pal-brick{display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:grab;
+    padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid transparent;
+    transition:background .12s,border-color .12s;}
+  .pal-brick:hover{background:rgba(255,255,255,.08);border-color:var(--line);}
+  .pal-swatch{width:34px;height:26px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font-size:17px;}
+  .pal-name{font-size:13px;font-weight:700;line-height:1.1;}
+  .pal-sub{font-size:10px;color:var(--muted);}
+
+  /* canvas */
+  .canvas-wrap{flex:1;position:relative;overflow:hidden;
+    background-image:radial-gradient(rgba(255,255,255,.05) 1.3px,transparent 1.3px);
+    background-size:26px 26px;}
+  #wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;}
+  #canvas{position:absolute;inset:0;z-index:2;}
+  .hint-empty{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    text-align:center;color:var(--muted);font-size:15px;pointer-events:none;line-height:1.7;}
+
+  /* 3D LEGO brick */
+  .brick{position:absolute;width:112px;cursor:grab;touch-action:none;z-index:2;
+    transition:filter .2s, transform .08s;}
+  .brick.dragging{z-index:40;cursor:grabbing;}
+  .studs{display:flex;gap:9px;justify-content:center;margin-bottom:-6px;position:relative;z-index:2;padding:0 10px;}
+  .stud{width:16px;height:9px;border-radius:50%/60%;background:var(--bk-top);
+    box-shadow:inset 0 -2px 0 rgba(0,0,0,.25), 0 1px 0 rgba(255,255,255,.35);}
+  .brick-body{position:relative;border-radius:10px;padding:12px 8px 16px;text-align:center;
+    background:linear-gradient(180deg,var(--bk-top),var(--bk-mid));
+    box-shadow:0 10px 0 var(--bk-dark), 0 14px 18px rgba(0,0,0,.4),
+      inset 0 2px 0 rgba(255,255,255,.4);}
+  .brick-emoji{font-size:26px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.25));}
+  .brick-label{font-size:11.5px;font-weight:800;color:#10163a;margin-top:2px;letter-spacing:.2px;}
+  .brick .nub{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);
+    width:20px;height:20px;border-radius:50%;background:#0e1230;border:3px solid #fff;
+    cursor:crosshair;z-index:6;box-shadow:0 2px 6px rgba(0,0,0,.5);transition:transform .1s;}
+  .brick .nub:hover{transform:translateX(-50%) scale(1.25);}
+  .brick .del{position:absolute;top:-10px;right:-10px;width:22px;height:22px;border-radius:50%;
+    background:var(--bad);color:#fff;border:2px solid #fff;font-size:12px;font-weight:900;
+    display:none;align-items:center;justify-content:center;cursor:pointer;z-index:6;line-height:1;}
+  .brick:hover .del{display:flex;}
+  .brick.fixed .del,.brick.fixed .nub{display:none;}
+  .brick.pulse .brick-body{animation:pulse .6s ease;}
+  @keyframes pulse{0%,100%{transform:scale(1);}40%{transform:scale(1.12);}}
+  .brick.glow-good .brick-body{box-shadow:0 10px 0 var(--bk-dark),0 0 0 4px var(--good),0 0 26px var(--good);}
+  .brick.glow-bad .brick-body{box-shadow:0 10px 0 var(--bk-dark),0 0 0 4px var(--bad),0 0 30px var(--bad);
+    animation:shake .4s ease;}
+  @keyframes shake{0%,100%{transform:translateX(0);}25%{transform:translateX(-5px);}75%{transform:translateX(5px);}}
+
+  /* wire styles */
+  .wire{stroke:var(--line);stroke-width:5;fill:none;stroke-linecap:round;}
+  .wire.live{stroke:var(--accent);}
+  .flow{fill:var(--warn);}
+
+  /* ---------- SIM OVERLAY ---------- */
+  #simBar{position:absolute;top:60px;left:50%;transform:translateX(-50%);z-index:35;
+    background:rgba(16,20,56,.94);border:1px solid var(--line);border-radius:16px;
+    padding:12px 18px 14px;width:470px;text-align:center;box-shadow:0 18px 40px rgba(0,0,0,.5);
+    backdrop-filter:blur(8px);}
+  #simHead{display:flex;align-items:center;gap:8px;cursor:grab;margin-bottom:6px;touch-action:none;}
+  #simHead.drag{cursor:grabbing;}
+  #simHead #simWave{flex:1;text-align:left;}
+  .sim-btn{width:26px;height:26px;border-radius:8px;border:1px solid var(--line);
+    background:rgba(255,255,255,.05);color:var(--muted);font-weight:800;cursor:pointer;
+    font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;}
+  .sim-btn:hover{color:var(--ink);border-color:var(--accent);}
+  #simBar.min{width:260px;}
+  #simBar.min #simBody{display:none;}
+  #simWave{font-size:13px;letter-spacing:1px;color:var(--accent);text-transform:uppercase;font-weight:800;}
+  #simTitle{font-size:20px;font-weight:800;margin:4px 0 2px;}
+  #simDesc{font-size:13px;color:var(--muted);margin-bottom:10px;}
+  .meter{height:16px;border-radius:9px;background:rgba(255,255,255,.08);overflow:hidden;position:relative;}
+  .meter-fill{height:100%;width:0;border-radius:9px;background:linear-gradient(90deg,#58f0a8,#ffcf4d,#ff5c72);transition:width .9s ease;}
+  #simUsers{font-size:12px;color:var(--muted);margin-top:7px;}
+  #simVerdict{margin-top:12px;font-size:16px;font-weight:800;min-height:22px;}
+  #simHint{font-size:13px;color:var(--warn);margin-top:4px;min-height:18px;line-height:1.4;}
+  #simActions{margin-top:14px;display:flex;gap:10px;justify-content:center;}
+  .btn-sm{padding:9px 16px;font-size:13px;border-radius:10px;}
+  .btn-fix{background:var(--warn);box-shadow:0 5px 0 #c99a1e;}
+  .btn-next{background:linear-gradient(180deg,#58f0a8,#2fc985);box-shadow:0 5px 0 #1f9b65;}
+
+  /* win overlay */
+  #winScreen{position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:18px;text-align:center;
+    background:radial-gradient(900px 600px at 50% 30%,rgba(67,229,155,.22),rgba(14,18,48,.97));}
+  #winScreen .trophy{font-size:80px;animation:pulse 1.4s infinite;}
+  #winScreen h1{font-size:44px;margin:0;background:linear-gradient(90deg,#43e59b,#ffcf4d);
+    -webkit-background-clip:text;background-clip:text;color:transparent;}
+  #winScreen p{color:var(--muted);max-width:480px;font-size:16px;line-height:1.5;}
+  .confetti{position:absolute;width:10px;height:14px;top:-20px;border-radius:2px;animation:fall linear forwards;z-index:59;}
+  @keyframes fall{to{transform:translateY(110vh) rotate(720deg);opacity:.8;}}
+  .toast{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:50;
+    background:rgba(16,20,56,.95);border:1px solid var(--line);padding:11px 18px;border-radius:12px;
+    font-size:13.5px;color:var(--ink);opacity:0;transition:opacity .25s;pointer-events:none;}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+<div id="screens">
+
+  <!-- ============ PROJECT SELECT ============ -->
+  <div id="projectScreen">
+    <div>
+      <div class="logo">🧱 StackBuilder</div>
+      <div class="tagline">Snap together a system out of LEGO bricks — then survive the waves of traffic that try to break it.</div>
+    </div>
+    <div class="projects" id="projectList"></div>
+  </div>
+
+  <!-- ============ GAME ============ -->
+  <div id="gameScreen" class="hidden">
+    <div class="topbar">
+      <span class="proj" id="projName">Project</span>
+      <span class="goal" id="projGoal"></span>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost" id="backBtn">← Projects</button>
+      <button class="btn btn-start" id="startBtn">▶ Start Simulation</button>
+    </div>
+    <div class="workspace">
+      <div class="palette">
+        <h4>Components</h4>
+        <div id="paletteList"></div>
+      </div>
+      <div class="canvas-wrap" id="canvasWrap">
+        <svg id="wires"></svg>
+        <div id="canvas"></div>
+        <div class="hint-empty" id="emptyHint">
+          Drag components from the left onto the board.<br>
+          Drag from the white <b>◯ nub</b> on one brick to another to connect them.<br>
+          Build a path: <b>Users → … → Database</b>
+        </div>
+      </div>
+    </div>
+
+    <!-- simulation bar -->
+    <div id="simBar" class="hidden">
+      <div id="simHead" title="drag to move">
+        <span id="simWave">Wave 1</span>
+        <button class="sim-btn" id="simMin" title="minimize">–</button>
+        <button class="sim-btn" id="simExit" title="exit simulation">✕</button>
+      </div>
+      <div id="simBody">
+        <div id="simTitle">Title</div>
+        <div id="simDesc">desc</div>
+        <div class="meter"><div class="meter-fill" id="simMeter"></div></div>
+        <div id="simUsers">0 users</div>
+        <div id="simVerdict"></div>
+        <div id="simHint"></div>
+        <div id="simActions"></div>
+      </div>
+    </div>
+
+    <!-- win -->
+    <div id="winScreen" class="hidden">
+      <div class="trophy">🏆</div>
+      <h1>System Shipped!</h1>
+      <p id="winText"></p>
+      <div style="display:flex;gap:12px;">
+        <button class="btn btn-ghost" id="winAgain">Rebuild</button>
+        <button class="btn btn-start" id="winProjects">Other Projects →</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   DATA — components & scenarios (the rules engine)
+   ========================================================= */
+const COMPONENTS = {
+  users:   {name:'Users',          emoji:'👥', sub:'traffic source', top:'#ff8a9b', mid:'#ef5d72', dark:'#b93347'},
+  lb:      {name:'Load Balancer',  emoji:'⚖️', sub:'spreads load',   top:'#7f9bff', mid:'#5a74f0', dark:'#3a4fc0'},
+  app:     {name:'App Server',     emoji:'🖥️', sub:'runs your code', top:'#6ee7a8', mid:'#3fcc86', dark:'#259c62'},
+  cache:   {name:'Cache',          emoji:'⚡', sub:'fast reads',     top:'#ffd56b', mid:'#f6b73c', dark:'#c98f1e'},
+  db:      {name:'Database',       emoji:'🗄️', sub:'source of truth',top:'#c89bff', mid:'#a874f0', dark:'#7a4ac0'},
+  replica: {name:'Read Replica',   emoji:'🗃️', sub:'offloads reads', top:'#d9b6ff', mid:'#bf93f0', dark:'#8f62c0'},
+  cdn:     {name:'CDN',            emoji:'🌐', sub:'edge delivery',  top:'#6fe6e0', mid:'#36c6c0', dark:'#1e9994'},
+  queue:   {name:'Message Queue',  emoji:'📬', sub:'async jobs',     top:'#ff9bd1', mid:'#f05fae', dark:'#c03a84'},
+  storage: {name:'Object Storage', emoji:'🪣', sub:'files & media',  top:'#ffbf8a', mid:'#f59a52', dark:'#c57226'},
+};
+// palette order (users is auto-placed, not draggable)
+const PALETTE = ['lb','app','cache','db','replica','cdn','queue','storage'];
+
+const PROJECTS = [
+  {id:'photo', emoji:'📸', name:'PhotoShare', diff:'Beginner',
+   desc:'A photo-sharing app. Users upload images and scroll a feed.',
+   goal:'Serve a global photo feed without melting your servers.'},
+  {id:'shop', emoji:'🛒', name:'QuickCart', diff:'Intermediate',
+   desc:'An online store with flash sales and heavy checkout traffic.',
+   goal:'Keep checkout alive through viral flash-sale spikes.'},
+  {id:'stream', emoji:'🎬', name:'StreamBox', diff:'Advanced',
+   desc:'A video platform streaming to users worldwide.',
+   goal:'Stream smoothly to a million concurrent viewers.'},
+];
+
+// Each scenario checks the graph (g) and returns {pass, need:[types], hint}
+const SCENARIOS = [
+  {wave:'Wave 1', title:'First Customers', users:50,
+   desc:'A trickle of early users arrive. Requests need somewhere to land.',
+   check:g=>{
+     const ok = g.linked('app') && g.linked('db');
+     return {pass:ok, need:['app','db'],
+       hint:'Requests have nowhere to go. Place an App Server and a Database, and connect Users → App Server → Database.'};
+   }},
+  {wave:'Wave 2', title:'Word Is Spreading', users:5000,
+   desc:'Thousands show up at once. A single server starts to smoke.',
+   check:g=>{
+     const ok = g.linked('lb') && g.count('app')>=2;
+     return {pass:ok, need:['lb','app'],
+       hint:'One server can\'t take it. Add a Load Balancer and a second App Server behind it.'};
+   }},
+  {wave:'Wave 3', title:'Read Storm', users:25000,
+   desc:'Your feed is a hit. The same popular posts get read tens of thousands of times a second. Your database is doing the same expensive query over and over and starting to choke.',
+   check:g=>{
+     const ok = g.onReadPath('cache');
+     return {pass:ok, need:['cache'],
+       hint:'Every read is hitting the database directly, including the same popular post 20,000 times a second. The database can’t keep up and requests start timing out. The fix isn’t a bigger database — it’s to stop asking it the same question repeatedly. Put a Cache on the read path (App Server → Cache → Database).',
+       explainPass:'The cache now answers the repeated reads from memory. 95% of requests never touch the database — that’s your cache hit ratio. The database went from 25,000 queries/sec to about 1,200. You didn’t make the database faster; you stopped asking it the same question.'};
+   }},
+  {wave:'Wave 4', title:'Media Goes Viral', users:100000,
+   desc:'A post blows up. Images hammer your app servers from everywhere.',
+   check:g=>{
+     const ok = g.linked('cdn');
+     return {pass:ok, need:['cdn','storage'],
+       hint:'Static media is crushing your servers. Add a CDN (ideally backed by Object Storage) to serve files from the edge.'};
+   }},
+  {wave:'Wave 5', title:'Backlog of Jobs', users:250000,
+   desc:'Thumbnails, emails and encoding pile up and block live requests.',
+   check:g=>{
+     const ok = g.linked('queue');
+     return {pass:ok, need:['queue'],
+       hint:'Heavy background work is blocking users. Add a Message Queue so jobs run async.'};
+   }},
+  {wave:'Final Wave', title:'Global Scale', users:1000000,
+   desc:'A million users, worldwide, all at once. Everything must work together.',
+   check:g=>{
+     const need=['lb','cache','db','cdn','queue'];
+     const missing=need.filter(t=>!g.linked(t));
+     const ok = missing.length===0 && g.count('app')>=3 && (g.linked('replica')||g.linked('cache'));
+     return {pass:ok, need:need.concat('app'),
+       hint:'To survive a million users you need the whole stack connected: Load Balancer, 3+ App Servers, Cache, Read Replica, Database, CDN and a Message Queue.'};
+   }},
+];
+
+/* =========================================================
+   STATE
+   ========================================================= */
+let placed = [];   // {uid, type, x, y, el}
+let edges = [];    // {a:uid, b:uid}
+let uidSeq = 1;
+let currentProject = null;
+let simIndex = 0;
+
+const $ = s=>document.querySelector(s);
+const canvas = $('#canvas');
+const wires = $('#wires');
+const canvasWrap = $('#canvasWrap');
+
+/* =========================================================
+   PROJECT SCREEN
+   ========================================================= */
+function renderProjects(){
+  const list = $('#projectList'); list.innerHTML='';
+  PROJECTS.forEach(p=>{
+    const c=document.createElement('div');
+    c.className='project-card';
+    c.innerHTML=`<div class="pc-emoji">${p.emoji}</div>
+      <h3>${p.name}</h3><p>${p.desc}</p>
+      <div class="pc-diff">◆ ${p.diff}</div>`;
+    c.onclick=()=>startProject(p);
+    list.appendChild(c);
+  });
+}
+function startProject(p){
+  currentProject=p;
+  $('#projName').textContent=`${p.emoji} ${p.name}`;
+  $('#projGoal').textContent=p.goal;
+  $('#projectScreen').classList.add('hidden');
+  $('#gameScreen').classList.remove('hidden');
+  resetBoard();
+}
+
+/* =========================================================
+   PALETTE
+   ========================================================= */
+function renderPalette(){
+  const list=$('#paletteList'); list.innerHTML='';
+  PALETTE.forEach(type=>{
+    const c=COMPONENTS[type];
+    const el=document.createElement('div');
+    el.className='pal-brick';
+    el.innerHTML=`<div class="pal-swatch" style="background:linear-gradient(180deg,${c.top},${c.mid})">${c.emoji}</div>
+      <div><div class="pal-name">${c.name}</div><div class="pal-sub">${c.sub}</div></div>`;
+    el.addEventListener('pointerdown',e=>{
+      e.preventDefault();
+      const r=canvasWrap.getBoundingClientRect();
+      // spawn at a nice spot near cursor
+      spawnBrick(type, e.clientX-r.left-56, e.clientY-r.top-24, true, e);
+    });
+    list.appendChild(el);
+  });
+}
+
+/* =========================================================
+   BOARD / BRICKS
+   ========================================================= */
+function resetBoard(){
+  placed=[]; edges=[]; canvas.innerHTML=''; wires.innerHTML='';
+  // auto place Users brick (fixed) on left
+  spawnBrick('users', 60, 180, false);
+  placed[0].fixed=true; placed[0].el.classList.add('fixed');
+  updateEmptyHint();
+  drawWires();
+}
+
+function spawnBrick(type,x,y,animate,origEvent){
+  const c=COMPONENTS[type];
+  const uid=uidSeq++;
+  const el=document.createElement('div');
+  el.className='brick';
+  el.style.setProperty('--bk-top',c.top);
+  el.style.setProperty('--bk-mid',c.mid);
+  el.style.setProperty('--bk-dark',c.dark);
+  el.style.left=x+'px'; el.style.top=y+'px';
+  el.innerHTML=`
+    <div class="studs"><div class="stud"></div><div class="stud"></div><div class="stud"></div></div>
+    <div class="brick-body">
+      <div class="brick-emoji">${c.emoji}</div>
+      <div class="brick-label">${c.name}</div>
+    </div>
+    <div class="nub" title="drag to connect"></div>
+    <div class="del" title="delete">✕</div>`;
+  canvas.appendChild(el);
+  const rec={uid,type,x,y,el,fixed:false};
+  placed.push(rec);
+  attachBrickHandlers(rec,origEvent);
+  if(animate){el.style.transform='scale(.4)';requestAnimationFrame(()=>{el.style.transition='transform .18s';el.style.transform='scale(1)';setTimeout(()=>el.style.transition='',200);});}
+  updateEmptyHint();
+  return rec;
+}
+
+function attachBrickHandlers(rec,origEvent){
+  const el=rec.el;
+  const body=el; // whole brick draggable except nub/del
+  // delete
+  el.querySelector('.del').addEventListener('pointerdown',e=>{
+    e.stopPropagation(); deleteBrick(rec);
+  });
+  // connection nub
+  el.querySelector('.nub').addEventListener('pointerdown',e=>{
+    e.stopPropagation(); e.preventDefault(); startWire(rec,e);
+  });
+  // drag body
+  body.addEventListener('pointerdown',e=>{
+    if(e.target.classList.contains('nub')||e.target.classList.contains('del'))return;
+    if(rec.fixed){return;}
+    startDrag(rec,e);
+  });
+  // if spawned by a drag from palette, begin dragging immediately
+  if(origEvent){ startDrag(rec,origEvent,true); }
+}
+
+/* ---- dragging a brick ---- */
+let drag=null;
+function startDrag(rec,e,fromPalette){
+  const r=canvasWrap.getBoundingClientRect();
+  drag={rec, offX: fromPalette?56:(e.clientX-r.left-rec.x), offY: fromPalette?24:(e.clientY-r.top-rec.y)};
+  rec.el.classList.add('dragging');
+  window.addEventListener('pointermove',onDragMove);
+  window.addEventListener('pointerup',onDragUp);
+}
+function onDragMove(e){
+  if(!drag)return;
+  const r=canvasWrap.getBoundingClientRect();
+  let x=e.clientX-r.left-drag.offX;
+  let y=e.clientY-r.top-drag.offY;
+  x=Math.max(0,Math.min(x,r.width-112));
+  y=Math.max(0,Math.min(y,r.height-96));
+  drag.rec.x=x; drag.rec.y=y;
+  drag.rec.el.style.left=x+'px'; drag.rec.el.style.top=y+'px';
+  drawWires();
+}
+function onDragUp(){
+  if(drag) drag.rec.el.classList.remove('dragging');
+  drag=null;
+  window.removeEventListener('pointermove',onDragMove);
+  window.removeEventListener('pointerup',onDragUp);
+}
+
+function deleteBrick(rec){
+  if(rec.fixed)return;
+  edges=edges.filter(e=>e.a!==rec.uid&&e.b!==rec.uid);
+  placed=placed.filter(p=>p!==rec);
+  rec.el.remove();
+  drawWires(); updateEmptyHint();
+}
+
+/* ---- drawing wires between bricks ---- */
+let wireDraw=null;
+function startWire(rec,e){
+  wireDraw={from:rec};
+  window.addEventListener('pointermove',onWireMove);
+  window.addEventListener('pointerup',onWireUp);
+}
+function brickCenter(rec){
+  return {x:rec.x+56, y:rec.y+54};
+}
+function onWireMove(e){
+  if(!wireDraw)return;
+  const r=canvasWrap.getBoundingClientRect();
+  drawWires({x:e.clientX-r.left,y:e.clientY-r.top});
+}
+function onWireUp(e){
+  if(!wireDraw){return;}
+  const r=canvasWrap.getBoundingClientRect();
+  const mx=e.clientX-r.left,my=e.clientY-r.top;
+  // find a brick under the cursor (other than source)
+  let target=null;
+  for(const p of placed){
+    if(p===wireDraw.from)continue;
+    if(mx>=p.x&&mx<=p.x+112&&my>=p.y&&my<=p.y+110){target=p;break;}
+  }
+  if(target){ addEdge(wireDraw.from.uid,target.uid); }
+  wireDraw=null;
+  window.removeEventListener('pointermove',onWireMove);
+  window.removeEventListener('pointerup',onWireUp);
+  drawWires();
+}
+function addEdge(a,b){
+  if(a===b)return;
+  if(edges.some(e=>(e.a===a&&e.b===b)||(e.a===b&&e.b===a))){
+    toast('Already connected'); return;
+  }
+  edges.push({a,b});
+  toast('Connected 🔗');
+}
+
+function recByUid(uid){return placed.find(p=>p.uid===uid);}
+
+function drawWires(tempTo){
+  let svg='';
+  edges.forEach((e,i)=>{
+    const A=recByUid(e.a),B=recByUid(e.b); if(!A||!B)return;
+    const a=brickCenter(A),b=brickCenter(B);
+    const mx=(a.x+b.x)/2;
+    svg+=`<path class="wire ${e.live?'live':''}" d="M${a.x},${a.y} C${mx},${a.y} ${mx},${b.y} ${b.x},${b.y}"/>`;
+    if(e.live){
+      svg+=`<circle class="flow" r="5"><animateMotion dur="1s" repeatCount="indefinite"
+        path="M${a.x},${a.y} C${mx},${a.y} ${mx},${b.y} ${b.x},${b.y}"/></circle>`;
+    }
+  });
+  if(wireDraw&&tempTo){
+    const a=brickCenter(wireDraw.from);
+    svg+=`<path class="wire live" stroke-dasharray="7 6" d="M${a.x},${a.y} L${tempTo.x},${tempTo.y}"/>`;
+  }
+  wires.innerHTML=svg;
+}
+function updateEmptyHint(){
+  $('#emptyHint').style.display = placed.length<=1 ? 'block':'none';
+}
+
+/* =========================================================
+   GRAPH ANALYSIS (what the rules engine reads)
+   ========================================================= */
+function buildGraph(){
+  const adj={}; placed.forEach(p=>adj[p.uid]=[]);
+  edges.forEach(e=>{ if(adj[e.a]&&adj[e.b]){adj[e.a].push(e.b);adj[e.b].push(e.a);} });
+  // BFS from the Users brick
+  const usersNode=placed.find(p=>p.type==='users');
+  const reachable=new Set();
+  if(usersNode){
+    const q=[usersNode.uid]; reachable.add(usersNode.uid);
+    while(q.length){const n=q.shift();adj[n].forEach(m=>{if(!reachable.has(m)){reachable.add(m);q.push(m);}});}
+  }
+  const linkedTypes={};
+  placed.forEach(p=>{ if(reachable.has(p.uid)){ linkedTypes[p.type]=(linkedTypes[p.type]||0)+1; } });
+  // Read-path awareness: is a node of `type` wired between an App Server and a
+  // Database (App → type → DB), not just connected somewhere? Needed so the
+  // engine can tell "cache on the read path" from "cache dangling off to the side".
+  const onReadPath=(type,behind='db',front='app')=>{
+    return placed.some(node=>{
+      if(node.type!==type || !reachable.has(node.uid)) return false;
+      const nbrs=adj[node.uid]||[];
+      const touchesFront=nbrs.some(n=>reachable.has(n)&&recByUid(n)?.type===front);
+      const touchesBehind=nbrs.some(n=>reachable.has(n)&&recByUid(n)?.type===behind);
+      return touchesFront && touchesBehind;
+    });
+  };
+  return {
+    linked:t=> (linkedTypes[t]||0)>0,
+    count:t=> (linkedTypes[t]||0),
+    onReadPath,
+    reachable
+  };
+}
+
+/* =========================================================
+   SIMULATION
+   ========================================================= */
+function highlightReset(){
+  placed.forEach(p=>p.el.classList.remove('glow-good','glow-bad','pulse'));
+  edges.forEach(e=>e.live=false);
+}
+function runSimulation(){
+  simIndex=0;
+  const bar=$('#simBar');
+  bar.classList.remove('hidden','min');
+  $('#simMin').textContent='–';
+  // reset panel to default centered position each run
+  bar.style.left='50%'; bar.style.top='60px'; bar.style.transform='translateX(-50%)';
+  $('#startBtn').disabled=true;
+  toast('Tip: drag or minimise this panel to edit your board while testing 🧱');
+  nextWave();
+}
+function nextWave(){
+  highlightReset();
+  const g=buildGraph();
+  const sc=SCENARIOS[simIndex];
+  const res=sc.check(g);
+
+  $('#simWave').textContent=sc.wave;
+  $('#simTitle').textContent=sc.title;
+  $('#simDesc').textContent=sc.desc;
+  $('#simVerdict').textContent='';
+  $('#simHint').textContent='';
+  $('#simActions').innerHTML='';
+  $('#simMeter').style.width='0';
+  $('#simUsers').textContent='0 users';
+
+  // animate traffic flowing through linked edges
+  edges.forEach(e=>{
+    const A=recByUid(e.a),B=recByUid(e.b);
+    if(A&&B&&g.reachable.has(e.a)&&g.reachable.has(e.b)) e.live=true;
+  });
+  drawWires();
+  placed.forEach(p=>{ if(g.reachable.has(p.uid)){p.el.classList.add('pulse');} });
+
+  // count-up users
+  let t=0;const steps=22;
+  const timer=setInterval(()=>{
+    t++;
+    const frac=t/steps;
+    $('#simMeter').style.width=(frac*100)+'%';
+    $('#simUsers').textContent=Math.floor(frac*sc.users).toLocaleString()+' users';
+    if(t>=steps){clearInterval(timer);revealVerdict(sc,res,g);}
+  },45);
+}
+function revealVerdict(sc,res,g){
+  edges.forEach(e=>e.live=false); drawWires();
+  if(res.pass){
+    // glow the components doing the work
+    placed.forEach(p=>{ if(g.reachable.has(p.uid)) p.el.classList.add('glow-good'); });
+    $('#simVerdict').innerHTML=`<span style="color:var(--good)">✓ Survived ${sc.users.toLocaleString()} users!</span>`;
+    const hintEl=$('#simHint');
+    hintEl.style.color='var(--muted)';
+    hintEl.textContent=res.explainPass||'';
+    confettiBurst(18);
+    if(simIndex>=SCENARIOS.length-1){
+      setTimeout(winGame,700);
+    }else{
+      const b=document.createElement('button');
+      b.className='btn btn-sm btn-next'; b.textContent='Next Wave →';
+      b.onclick=()=>{simIndex++;nextWave();};
+      $('#simActions').appendChild(b);
+    }
+  }else{
+    // glow bad: the users + anything present, and show what's missing
+    const miss=res.need.filter(t=>!g.linked(t));
+    placed.forEach(p=>{ p.el.classList.add(p.type==='users'?'glow-bad':''); });
+    $('#simVerdict').innerHTML=`<span style="color:var(--bad)">✗ System overloaded at ${sc.users.toLocaleString()} users</span>`;
+    $('#simHint').style.color='var(--warn)';
+    $('#simHint').textContent=res.hint;
+    highlightMissingInPalette(miss);
+    const b=document.createElement('button');
+    b.className='btn btn-sm btn-fix'; b.textContent='← Back to Building';
+    b.onclick=closeSim;
+    $('#simActions').appendChild(b);
+    const r=document.createElement('button');
+    r.className='btn btn-sm btn-next'; r.textContent='Retry Wave';
+    r.onclick=()=>nextWave();
+    $('#simActions').appendChild(r);
+  }
+}
+function highlightMissingInPalette(types){
+  // flash matching palette items
+  document.querySelectorAll('.pal-brick').forEach((el,i)=>{
+    const type=PALETTE[i];
+    if(types.includes(type)){
+      el.style.transition='box-shadow .2s';
+      el.style.boxShadow='0 0 0 2px var(--warn),0 0 16px var(--warn)';
+      setTimeout(()=>el.style.boxShadow='',1600);
+    }
+  });
+}
+function closeSim(){
+  $('#simBar').classList.add('hidden');
+  $('#startBtn').disabled=false;
+  highlightReset(); drawWires();
+}
+function winGame(){
+  $('#simBar').classList.add('hidden');
+  $('#winText').textContent=`You scaled ${currentProject.name} from 50 to 1,000,000 users and survived every wave. ${currentProject.goal}`;
+  $('#winScreen').classList.remove('hidden');
+  confettiBurst(80);
+}
+
+/* =========================================================
+   FX
+   ========================================================= */
+let toastTimer;
+function toast(msg){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'), msg.length>40?2600:1100);
+}
+function confettiBurst(n){
+  const colors=['#6c7bff','#43e59b','#ffcf4d','#ff5c72','#6fe6e0'];
+  for(let i=0;i<n;i++){
+    const c=document.createElement('div');
+    c.className='confetti';
+    c.style.left=Math.random()*100+'vw';
+    c.style.background=colors[i%colors.length];
+    c.style.animationDuration=(2+Math.random()*1.8)+'s';
+    c.style.animationDelay=(Math.random()*.3)+'s';
+    document.body.appendChild(c);
+    setTimeout(()=>c.remove(),4200);
+  }
+}
+
+/* =========================================================
+   WIRING UP BUTTONS
+   ========================================================= */
+$('#startBtn').onclick=()=>{
+  if(placed.length<=1){toast('Build something first! 🧱');return;}
+  runSimulation();
+};
+$('#backBtn').onclick=()=>{
+  $('#gameScreen').classList.add('hidden');
+  $('#projectScreen').classList.remove('hidden');
+  $('#winScreen').classList.add('hidden');
+  $('#simBar').classList.add('hidden');
+  $('#startBtn').disabled=false;
+};
+$('#winAgain').onclick=()=>{ $('#winScreen').classList.add('hidden'); $('#startBtn').disabled=false; resetBoard(); };
+$('#winProjects').onclick=()=>{ $('#winScreen').classList.add('hidden'); $('#backBtn').click(); };
+
+/* ---- sim panel: minimize / exit / drag (so you can edit mid-run) ---- */
+$('#simMin').onclick=()=>{
+  const bar=$('#simBar'); bar.classList.toggle('min');
+  $('#simMin').textContent=bar.classList.contains('min')?'▢':'–';
+};
+$('#simExit').onclick=closeSim;
+
+let barDrag=null;
+$('#simHead').addEventListener('pointerdown',e=>{
+  if(e.target.id==='simMin'||e.target.id==='simExit')return;
+  const bar=$('#simBar'); const rect=bar.getBoundingClientRect();
+  bar.style.transform='none';
+  bar.style.left=rect.left+'px'; bar.style.top=rect.top+'px';
+  barDrag={dx:e.clientX-rect.left, dy:e.clientY-rect.top, bar};
+  $('#simHead').classList.add('drag');
+  window.addEventListener('pointermove',onBarDrag);
+  window.addEventListener('pointerup',endBarDrag);
+});
+function onBarDrag(e){
+  if(!barDrag)return;
+  const maxX=window.innerWidth-120, maxY=window.innerHeight-60;
+  barDrag.bar.style.left=Math.max(0,Math.min(e.clientX-barDrag.dx,maxX))+'px';
+  barDrag.bar.style.top =Math.max(48,Math.min(e.clientY-barDrag.dy,maxY))+'px';
+}
+function endBarDrag(){
+  barDrag=null; $('#simHead').classList.remove('drag');
+  window.removeEventListener('pointermove',onBarDrag);
+  window.removeEventListener('pointerup',endBarDrag);
+}
+
+window.addEventListener('resize',drawWires);
+
+/* init */
+renderProjects();
+renderPalette();
+</script>
+</body>
+</html>
